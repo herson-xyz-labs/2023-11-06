@@ -29,16 +29,101 @@
         format: canvasFormat,
     });
 
+    /*
+        Define a GPUBuffer containing the vertices of a single cell.
+    */
+
+    const cellVertices = new Float32Array([
+        //   X,    Y,
+        -0.8, -0.8, // Triangle 1 (Blue)
+        0.8, -0.8,
+        0.8,  0.8,
+
+        -0.8, -0.8, // Triangle 2 (Red)
+        0.8,  0.8,
+        -0.8,  0.8,
+    ]);
+
+    const cellVertexBuffer = device.createBuffer({
+        label: "Cell vertices",
+        size: cellVertices.byteLength, // 32 bit float -> 4 bytes per float, 2 floats per vertex, 6 vertices per cell -> 48 bytes per cell
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+
+    device.queue.writeBuffer(cellVertexBuffer, /*bufferOffset=*/0, cellVertices);
+
+    /*
+        Tell the GPU how to interpret the vertices of a single cell.
+    */
+
+    const cellVertexBufferLayout = {
+        arrayStride: 8, // Number of bytes to skip forward in the vertex buffer to get to the next vertex
+        attributes: [{  // We are only using 1 attribute: vertex position. But we could potentially use others, like color, normal, texture coordinates, etc.
+            format: "float32x2", // This maps to fn vertexMain(@location(0) pos: vec2f) in the shader code
+            offset: 0,
+            shaderLocation: 0, // This maps to fn vertexMain(@location(0) pos: vec2f) in the shader code
+        }],
+    };
+
+    /*
+        Now that we have the data we want to render, tell the GPU how to process it.
+    */
+
+    const cellShaderModule = device.createShaderModule({
+        label: "Cell shader",
+        code: 
+        `
+            @vertex
+            fn vertexMain(@location(0) pos: vec2f) -> // This maps to the "shaderLocation" and the "format" of the attribute settings in cellVertexBufferLayout
+                @builtin(position) vec4f {
+                return vec4f(pos, 0, 1);
+            }
+
+            @fragment
+            fn fragmentMain() -> @location(0) vec4f { // @location(0) maps to the colorAttachments[0] settings in the render pass below
+                return vec4f(1, 0, 0, 1);
+            }
+        `
+    });
+
+    /*
+        Create a render pipeline that will render cells.
+        Now that we have the data we want to render and how to process it, tell the GPU how to put it all together.
+        The render pipeline controls how geometry is drawn, including things like which shaders are used, how to interpret data in vertex buffers, which kind of geometry should be rendered (lines, points, triangles...)
+    */
+    
+    const cellPipeline = device.createRenderPipeline(
+    {
+        label: "Cell pipeline",
+        layout: "auto",
+        vertex: {
+            module: cellShaderModule,
+            entryPoint: "vertexMain",
+            buffers: [cellVertexBufferLayout]
+    },
+        fragment: {
+            module: cellShaderModule,
+            entryPoint: "fragmentMain",
+            targets: [{
+                format: canvasFormat
+            }]
+    }
+    });
+
     const encoder = device.createCommandEncoder();
 
     const pass = encoder.beginRenderPass({
         colorAttachments: [{
             view: context.getCurrentTexture().createView(),
             loadOp: "clear",
-            clearValue: { r: 0, g: 0, b: 0.4, a: 1 }, // New line
+            clearValue: { r: 0, g: 0, b: 0.4, a: 1 },
             storeOp: "store",
         }],
     });
+
+    pass.setPipeline(cellPipeline);
+    pass.setVertexBuffer(0, cellVertexBuffer);
+    pass.draw(cellVertices.length / 2); // 6 vertices
 
     pass.end();
 
