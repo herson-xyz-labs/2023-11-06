@@ -60,10 +60,6 @@
         }],
     };
 
-    /*
-        Communicate the grid size to the shader using a uniform buffer.
-    */
-
     const gridSizeUniformArray = new Float32Array([GRID_SIZE, GRID_SIZE]);
     
     const gridSizeUniformBuffer = device.createBuffer({
@@ -78,42 +74,47 @@
         label: "Cell shader",
         code: 
         `
-            @group(0) @binding(0) var<uniform> grid: vec2f;
+            struct VertexInput {
+                @location(0) pos: vec2f,
+                @builtin(instance_index) instance: u32,
+            };
 
+            struct VertexOutput {
+                @builtin(position) pos: vec4f,
+                @location(0) cell: vec2f,
+            };
+
+            @group(0) @binding(0) var<uniform> grid: vec2f;
+            
             /*
-                - Reposition the geometries on a per-instance basis, using the built-in instance index.
-                - The instance index is u32, so we need to convert it to f32 to use it in the shader.
+                Improve readability by using structs for the vertex and fragment shader inputs and outputs
             */
+
             @vertex
-            fn vertexMain(@location(0) pos:vec2f,
-                          @builtin(instance_index) instance: u32) ->
-                          @builtin(position) vec4f 
+            fn vertexMain(input: VertexInput) -> VertexOutput
             {
+                // The way we access 'instance' and 'pos' changed when we added the VertexInput struct
+                let i = f32(input.instance);
+                let coordOffset = vec2f(i % grid.x, floor(i / grid.x));                  
+                let uvCoordOffset = coordOffset / grid * 2;                              
+                let gridPos = (input.pos + vec2f(1, 1)) / grid + vec2f(-1, -1) + uvCoordOffset;
+
 
                 /*
-                    - pos + vec2f(1, 1)                             - moves the position half a clip space unit to the right and up, so that the bottom left corner of the grid is at the origin.
-                    - (pos + vec2f(1, 1)) / grid                    - scales down the vectors so that they stay relative to the grid size.
-                    - vec2f(-1, -1)                                 - translates the vectors half a clip space unit to the left and down, so that the bottom left corner of the grid is at the bottom left corner of the canvas.
-                    
-                    - Equivalent: gridPos = (pos + 1) / grid - 1;
-
-                    - vec2f(i % grid.x, floor(i / grid.x))          - For each cell's X value, you want the modulo of the instance_index and the grid width, 
-                                                                      which you can perform in WGSL with the % operator. And for each cell's Y value you want 
-                                                                      the instance_index divided by the grid width, discarding any fractional remainder. 
-                                                                      You can do that with WGSL's floor() function.
+                    Return the vertex shader output as a struct
                 */
-
-                let i = f32(instance);
-                let coordOffset = vec2f(i % grid.x, floor(i / grid.x));                  // Vector that holds the amounts to offset the cell in the grid.
-                let uvCoordOffset = coordOffset / grid * 2;                              // Normalized vector that holds the amounts to offset the cell in the grid.
-                let gridPos = (pos + vec2f(1, 1)) / grid + vec2f(-1, -1) + uvCoordOffset;
-
-                return vec4f(gridPos, 0, 1);
+                var output: VertexOutput;
+                output.pos = vec4f(gridPos, 0, 1);
+                output.cell = uvCoordOffset;
+                return output;
             }
 
+            /*
+                Reuse the VertexOutput struct for the fragment shader input, instead of using a separate struct
+            */
             @fragment
-            fn fragmentMain() -> @location(0) vec4f { // @location(0) maps to the colorAttachments[0] settings in the render pass below
-                return vec4f(1, 0, 0, 1);
+            fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+                return vec4f(input.cell, 1 - input.cell.x, 1);
             }
         `
     });
@@ -135,11 +136,6 @@
             }]
     }
     });
-
-    /*
-        A bind group is a collection of resources that you want to make accessible to your shader at the same time. 
-        It can include several types of buffers, like your uniform buffer, and other resources like textures and samplers.
-    */
 
     const bindGroup = device.createBindGroup({
         label: "Cell renderer bind group",
@@ -164,10 +160,6 @@
     pass.setPipeline(cellPipeline);
     pass.setVertexBuffer(0, cellVertexBuffer);
     pass.setBindGroup(0, bindGroup);
-
-    /*
-        Instancing the geometry to draw a grid of cells, by passing the number of instances to draw as the second argument to draw().
-    */
 
     pass.draw(cellVerticesArray.length / 2, GRID_SIZE * GRID_SIZE);
 
