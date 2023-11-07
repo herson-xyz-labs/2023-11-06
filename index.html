@@ -51,14 +51,14 @@
                 };
 
                 @group(0) @binding(0) var<uniform> grid: vec2f;
-                @group(0) @binding(1) var<storage> cellState: array<u32>;
+                @group(0) @binding(1) var<storage> cellState: array<f32>;
 
                 @vertex
                 fn vertexMain(input: VertexInput) -> VertexOutput{                     
 
                     let i = f32(input.instance);
                     let cell = vec2f(i % grid.x, floor(i / grid.x));
-                    let state = f32(cellState[input.instance]);
+                    let state = cellState[input.instance];
 
                     let cellOffset = cell / grid * 2;
                     let gridPos = (input.pos*state + 1 ) / grid - 1 + cellOffset;
@@ -82,8 +82,8 @@
             code:
             `
                 @group(0) @binding(0) var<uniform> grid: vec2f;
-                @group(0) @binding(1) var<storage> cellStateIn: array<u32>;
-                @group(0) @binding(2) var<storage, read_write> cellStateOut: array<u32>;
+                @group(0) @binding(1) var<storage> cellStateIn: array<f32>;
+                @group(0) @binding(2) var<storage, read_write> cellStateOut: array<f32>;
                 @group(0) @binding(3) var<storage, read_write> output: array<f32>;
 
                 fn cellIndex(cell: vec2u) -> u32 {
@@ -91,7 +91,7 @@
                         (cell.x % u32(grid.x));
                 }
 
-                fn cellActive(x: u32, y: u32) -> u32 {
+                fn cellActive(x: u32, y: u32) -> f32 {
                     return cellStateIn[cellIndex(vec2(x, y))];
                 }
 
@@ -115,7 +115,7 @@
 
                         let i = cellIndex(cell.xy);
 
-                        switch activeNeighbors {
+                        switch u32(activeNeighbors) {
                             case 2: {
                                 cellStateOut[i] = cellStateIn[i];
                             }
@@ -200,7 +200,7 @@
 
         device.queue.writeBuffer(gridSizeUniformBuffer, /*bufferOffset=*/0, gridSizeUniformArray);
 
-        const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
+        const cellStateArray = new Float32Array(GRID_SIZE * GRID_SIZE);
         
         for (let i = 0; i < cellStateArray.length; ++i) {
             cellStateArray[i] = Math.random() > 0.6 ? 1 : 0;
@@ -386,7 +386,7 @@
 
                 stagingBuffer.unmap();
 
-            // console.log(new Float32Array(data));
+            //console.log(new Float32Array(data));
 
         }
         setInterval(renderLoop, UPDATE_INTERVAL);
